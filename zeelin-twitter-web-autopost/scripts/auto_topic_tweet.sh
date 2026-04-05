@@ -1,0 +1,41 @@
+#!/bin/bash
+# Auto tweet from a topic: fetch simple tech signals + generate tweet + publish
+# Usage: bash auto_topic_tweet.sh "topic"
+
+set -euo pipefail
+
+TOPIC="${1:-}"
+BASE_URL="https://x.com"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+TWEET_SCRIPT="$SCRIPT_DIR/tweet.sh"
+
+if [ -z "$TOPIC" ]; then
+  echo "Usage: auto_topic_tweet.sh \"topic\""
+  exit 1
+fi
+
+# --- Step 1: get lightweight signals (Hacker News titles mentioning topic) ---
+SIGNALS=$(curl -s "https://hn.algolia.com/api/v1/search?query=$TOPIC&tags=story" \
+  | grep -o '"title":"[^"]*"' \
+  | head -5 \
+  | sed 's/"title":"//;s/"//')
+
+# --- Step 2: build a tweet ---
+TWEET="Hot topic in AI dev circles: $TOPIC.\n\nRecent signals from the tech community:\n"
+
+while read -r line; do
+  [ -z "$line" ] && continue
+  TWEET+="• $line\n"
+done <<< "$SIGNALS"
+
+TWEET+="\nThis shows how fast the AI tooling ecosystem is evolving."
+TWEET+="\n\n#AI #AIDev #Tech"
+
+# --- Step 3: publish ---
+
+echo "Generated tweet:"
+echo "----------------"
+echo "$TWEET"
+echo "----------------"
+
+bash "$TWEET_SCRIPT" "$TWEET" "$BASE_URL"
