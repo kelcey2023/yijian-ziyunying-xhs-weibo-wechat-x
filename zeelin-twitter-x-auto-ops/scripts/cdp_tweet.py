@@ -3,10 +3,10 @@
 Post a tweet via Chrome DevTools Protocol (CDP) — no openclaw CLI dependency.
 Connects directly to Chrome on the CDP port, avoiding gateway round-trip issues.
 
-Usage: python3 cdp_tweet.py "tweet text" [--port 9222] [--base-url https://x.com]
+Usage: python3 cdp_tweet.py "tweet text" [--port 9222] [--base-url https://x.com] [--image /abs/path.png]
 """
 
-import argparse, json, time, sys, urllib.request
+import argparse, json, os, sys, time, urllib.parse, urllib.request
 
 import websocket
 
@@ -76,6 +76,45 @@ def js_eval(ws, expression, timeout=10):
     return val.get("value", val.get("description", ""))
 
 
+def upload_image(ws, image_path):
+    absolute_path = os.path.abspath(image_path)
+    if not os.path.isfile(absolute_path):
+        raise FileNotFoundError(f"media file not found: {absolute_path}")
+
+    cdp_send(ws, "DOM.enable")
+    root = cdp_send(ws, "DOM.getDocument", {"depth": 1, "pierce": True})
+    root_id = root.get("root", {}).get("nodeId")
+    if not root_id:
+        raise RuntimeError("could not access DOM root for media upload")
+
+    node_id = 0
+    for selector in ('input[data-testid="fileInput"]', 'input[type="file"]'):
+        result = cdp_send(ws, "DOM.querySelector", {"nodeId": root_id, "selector": selector})
+        node_id = result.get("nodeId", 0)
+        if node_id:
+            break
+
+    if not node_id:
+        raise RuntimeError("media file input not found on compose page")
+
+    cdp_send(ws, "DOM.setFileInputFiles", {"nodeId": node_id, "files": [absolute_path]})
+    time.sleep(5)
+
+    preview_state = js_eval(
+        ws,
+        """
+        (() => {
+            const preview = document.querySelector('[data-testid="attachments"]')
+                || document.querySelector('[data-testid="toolBar"] img')
+                || document.querySelector('article img');
+            return preview ? "UPLOAD_READY" : "UPLOAD_PENDING";
+        })()
+        """,
+        timeout=10,
+    )
+    return preview_state
+
+
 JS_FOCUS_TEXTBOX = r"""
 (() => {
     const selectors = [
@@ -88,6 +127,46 @@ JS_FOCUS_TEXTBOX = r"""
         if (el) { el.focus(); el.click(); return "OK"; }
     }
     return "ERROR:TEXTBOX_NOT_FOUND";
+})()
+"""
+
+JS_CLEAR_TEXTBOX = r"""
+(() => {
+    const el = document.querySelector('[data-testid="tweetTextarea_0"]')
+        || document.querySelector('[contenteditable="true"][role="textbox"]')
+        || document.querySelector('[role="textbox"]');
+    if (!el) return "ERROR:NO_TEXTBOX";
+    el.focus();
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.execCommand('selectAll', false, null);
+    document.execCommand('delete', false, null);
+    el.replaceChildren();
+    el.innerHTML = '';
+    el.textContent = '';
+    el.dispatchEvent(new InputEvent('beforeinput', {bubbles: true, inputType: 'deleteContentBackward', data: null}));
+    el.dispatchEvent(new InputEvent('input', {bubbles: true, inputType: 'deleteContentBackward', data: null}));
+    return (el.innerText || el.textContent || '').trim().length === 0 ? "CLEARED" : "PARTIAL";
+})()
+"""
+
+JS_TEXTBOX_LENGTH = r"""
+(() => {
+    const el = document.querySelector('[data-testid="tweetTextarea_0"]')
+        || document.querySelector('[contenteditable="true"][role="textbox"]')
+        || document.querySelector('[role="textbox"]');
+    if (!el) return -1;
+    return (el.innerText || el.textContent || '').trim().length;
+})()
+"""
+
+JS_OVER_LIMIT = r"""
+(() => {
+    const body = document.body.innerText || '';
+    return /超出了\s*\d+\s*的字符数限制|exceeds the \d+ character limit/i.test(body);
 })()
 """
 
@@ -132,7 +211,7 @@ JS_CHECK_LOGIN = r"""
 """
 
 
-def post_tweet(tweet_text, port=9222, base_url="https://x.com"):
+def post_tweet(tweet_text, port=9222, base_url="https://x.com", image_path=None):
     print(f"CDP port: {port}")
 
     # List tabs and find/activate X tab
@@ -166,9 +245,12 @@ def post_tweet(tweet_text, port=9222, base_url="https://x.com"):
 
         # Navigate to compose page
         current_url = target.get("url", "")
+        compose_url = f"{base_url}/compose/post?text={urllib.parse.quote(tweet_text)}"
         if "compose/post" not in current_url:
             print("Navigating to compose page...")
-            navigate_tab(ws, f"{base_url}/compose/post")
+            navigate_tab(ws, compose_url)
+        else:
+            navigate_tab(ws, compose_url)
 
         # Wait for page to be ready
         for attempt in range(10):
@@ -193,7 +275,7 @@ def post_tweet(tweet_text, port=9222, base_url="https://x.com"):
 
         if "ERROR" in str(focus_result):
             print("Textbox not found, retrying after navigation...")
-            navigate_tab(ws, f"{base_url}/compose/post")
+            navigate_tab(ws, compose_url)
             time.sleep(3)
             focus_result = js_eval(ws, JS_FOCUS_TEXTBOX)
             print(f"Retry focus: {focus_result}")
@@ -203,17 +285,41 @@ def post_tweet(tweet_text, port=9222, base_url="https://x.com"):
 
         time.sleep(0.3)
 
-        # Clear existing text (Cmd+A then Delete)
-        cdp_send(ws, "Input.dispatchKeyEvent", {"type": "keyDown", "key": "a", "code": "KeyA", "modifiers": 2})
-        cdp_send(ws, "Input.dispatchKeyEvent", {"type": "keyUp", "key": "a", "code": "KeyA", "modifiers": 2})
-        cdp_send(ws, "Input.dispatchKeyEvent", {"type": "keyDown", "key": "Backspace", "code": "Backspace"})
-        cdp_send(ws, "Input.dispatchKeyEvent", {"type": "keyUp", "key": "Backspace", "code": "Backspace"})
+        clear_result = js_eval(ws, JS_CLEAR_TEXTBOX)
+        print(f"Clear textbox: {clear_result}")
         time.sleep(0.3)
+        textbox_length = js_eval(ws, JS_TEXTBOX_LENGTH)
+        print(f"Textbox length after clear: {textbox_length}")
+
+        if int(textbox_length) > 0:
+            print("Retrying compose page to clear stale draft state...")
+            navigate_tab(ws, compose_url)
+            time.sleep(3)
+            focus_result = js_eval(ws, JS_FOCUS_TEXTBOX)
+            print(f"Refocus textbox: {focus_result}")
+            clear_result = js_eval(ws, JS_CLEAR_TEXTBOX)
+            print(f"Second clear textbox: {clear_result}")
+            time.sleep(0.5)
+            textbox_length = js_eval(ws, JS_TEXTBOX_LENGTH)
+            print(f"Textbox length after second clear: {textbox_length}")
+
+        if int(textbox_length) > 0:
+            print("ERROR: Compose textbox still contains stale content")
+            return False
 
         # Type via CDP Input.insertText (triggers React state updates correctly)
         cdp_send(ws, "Input.insertText", {"text": tweet_text})
         time.sleep(1)
         print(f"Text inserted ({len(tweet_text)} chars)")
+        typed_length = js_eval(ws, JS_TEXTBOX_LENGTH)
+        print(f"Textbox length after type: {typed_length}")
+        if js_eval(ws, JS_OVER_LIMIT):
+            print("ERROR: Tweet editor reports over character limit")
+            return False
+
+        if image_path:
+            upload_result = upload_image(ws, image_path)
+            print(f"Media upload: {upload_result}")
 
         # Click Post button
         for attempt in range(5):
@@ -257,11 +363,17 @@ if __name__ == "__main__":
     parser.add_argument("tweet", help="Tweet text to post")
     parser.add_argument("--port", type=int, default=int(__import__("os").environ.get("OPENCLAW_CDP_PORT", "9222")))
     parser.add_argument("--base-url", default="https://x.com")
+    parser.add_argument("--image", default="", help="Optional image path to attach")
     args = parser.parse_args()
 
     if not args.tweet.strip():
         print("Error: Tweet content is required")
         sys.exit(1)
 
-    success = post_tweet(args.tweet, port=args.port, base_url=args.base_url)
+    success = post_tweet(
+        args.tweet,
+        port=args.port,
+        base_url=args.base_url,
+        image_path=args.image.strip() or None,
+    )
     sys.exit(0 if success else 1)

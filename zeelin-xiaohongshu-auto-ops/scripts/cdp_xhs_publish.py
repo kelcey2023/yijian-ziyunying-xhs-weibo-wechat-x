@@ -4,12 +4,14 @@ Xiaohongshu creator — fill title + body via CDP, including content inside ifra
 
 - Walks Page.getFrameTree, uses Page.createIsolatedWorld + Runtime.evaluate per frame.
 - After focus, uses Input.insertText (focus must be in the target frame).
-- Does NOT click「发布」unless env XHS_AUTO_PUBLISH=1 (avoid accidental live posts).
+- Supports optional image/video upload through hidden file inputs on the publish page.
+- Does NOT click「发布」unless env XHS_NO_PUBLISH is unset or false.
 """
 from __future__ import annotations
 
 import json
 import os
+import pathlib
 import sys
 import time
 import urllib.request
@@ -34,6 +36,9 @@ def activate(p: int, tid: str):
 
 
 def find_xhs(p: int):
+    for t in list_tabs(p):
+        if t.get("type") == "page" and "creator.xiaohongshu.com" in t.get("url", ""):
+            return t
     for t in list_tabs(p):
         if t.get("type") == "page" and "xiaohongshu.com" in t.get("url", ""):
             return t
@@ -207,10 +212,13 @@ FOCUS_BODY_JS = """
 
 PUBLISH_JS = """
 (() => {
-    const labels = ['发布笔记', '发布', '立即发布', '定时发布'];
-    for (const n of document.querySelectorAll('button, [role="button"], div[class*="btn"], span[class*="btn"]')) {
+    const labels = ['发布', '立即发布', '定时发布'];
+    const isMenuPublish = (text, cls) => text === '发布笔记' || /btn-wrapper|btn-inner|btn-text/.test(cls || '');
+    for (const n of document.querySelectorAll('button, [role="button"], div[class*="publish"], div[class*="submit"], span[class*="publish"]')) {
         if (!n.offsetParent) continue;
         const t = (n.textContent || '').replace(/\\s+/g, '').trim();
+        const cls = n.className || '';
+        if (isMenuPublish(t, cls)) continue;
         for (const lb of labels) {
             if (t === lb) {
                 n.click();
@@ -238,6 +246,8 @@ CONFIRM_DIALOG_JS = """
     for (const n of document.querySelectorAll('button, [role="button"], div[class*="btn"], span[class*="btn"]')) {
         if (!n.offsetParent) continue;
         const t = (n.textContent || '').trim();
+        const cls = n.className || '';
+        if (isMenuPublish(t, cls)) continue;
         for (const lb of labels) {
             if (t.includes(lb)) {
                 n.click();
@@ -256,6 +266,38 @@ CHECK_SUCCESS_JS = """
     const url = location.href;
     if (/\/notes|\/published|note-manage/.test(url)) return 'SUCCESS_URL';
     return 'STILL_ON_PAGE';
+})()
+"""
+
+CHECK_MEDIA_READY_JS = """
+(() => {
+    const text = (document.body.innerText || '').replace(/\\s+/g, '');
+    const fileInput = document.querySelector('input[type="file"]');
+    const files = fileInput && fileInput.files ? fileInput.files.length : 0;
+    const hasPreview = !!document.querySelector(
+        '.upload-preview-container img, .upload-preview img, .preview-img, .media-card img, .recommend-item img'
+    );
+    const hasVideo = !!document.querySelector('.upload-preview-container video, .player-container video, video');
+    const hasEditor = document.querySelectorAll('textarea, [contenteditable="true"]').length > 1;
+    if (hasPreview || hasVideo || hasEditor) return 'MEDIA_READY';
+    if (/替换|重新上传|继续编辑|封面设置|裁剪|上传成功|预览/.test(text)) return 'MEDIA_READY_TEXT';
+    if (files > 0) return 'FILE_SELECTED_WAITING';
+    return 'MEDIA_PENDING';
+})()
+"""
+
+CHECK_UPLOAD_STAGE_JS = """
+(() => {
+    const text = (document.body.innerText || '').replace(/\\s+/g, '');
+    const files = document.querySelector('input[type="file"]')?.files?.length || 0;
+    const editorInputs = document.querySelectorAll('textarea, [contenteditable="true"]').length;
+    return {
+        files,
+        editorInputs,
+        stillUploader: /上传图片，或写文字生成图片|上传图片|文字配图/.test(text),
+        hasNext: /下一步|继续/.test(text),
+        hasTitle: /标题/.test(text),
+    };
 })()
 """
 
@@ -294,7 +336,7 @@ def best_frame_for_editor(ws) -> str | None:
     return best_fid
 
 
-def prepare_page(ws):
+def prepare_page(ws, media_kind: str = "image"):
     def probe_main():
         return js_eval(ws, PROBE_JS)
 
@@ -302,7 +344,16 @@ def prepare_page(ws):
     print("Main-frame probe:", p0)
     try:
         o = json.loads(p0)
-        if int(o.get("ce", 0)) < 1 and int(o.get("inputs", 0)) < 2:
+        href = str(o.get("href", ""))
+        if "creator.xiaohongshu.com" not in href or "publish" not in href:
+            cdp_send(
+                ws,
+                "Page.navigate",
+                {"url": "https://creator.xiaohongshu.com/publish/publish?source=official&from=menu"},
+            )
+            time.sleep(5)
+            print("After navigate:", probe_main())
+        elif int(o.get("ce", 0)) < 1 and int(o.get("inputs", 0)) < 2:
             cdp_send(
                 ws,
                 "Page.navigate",
@@ -318,20 +369,119 @@ def prepare_page(ws):
         )
         time.sleep(5)
 
-    js_eval(
-        ws,
-        """(() => {
-            for (const n of document.querySelectorAll('div,button,span,a')) {
-                const t = (n.textContent || '').replace(/\\s+/g,'').trim();
-                if (/^写图文$|^图文笔记$|^长文$/.test(t) && n.offsetParent) {
-                    n.click();
-                    return 'OPEN:' + t;
-                }
-            }
-            return 'SKIP';
-        })()""",
-    )
-    time.sleep(1)
+    select_publish_mode(ws, media_kind)
+
+
+def media_kind_for_path(media_path: str) -> str:
+    ext = pathlib.Path(media_path).suffix.lower()
+    if ext in {".mp4", ".mov", ".m4v", ".webm"}:
+        return "video"
+    return "image"
+
+
+def select_publish_mode(ws, media_kind: str):
+    if media_kind == "video":
+        labels = ["上传视频", "视频笔记", "发视频", "发布视频"]
+    else:
+        labels = ["上传图文", "图文笔记", "写图文", "发布图文", "长文"]
+
+    js = f"""
+    (() => {{
+        const labels = {json.dumps(labels, ensure_ascii=False)};
+        const clickNode = (node) => {{
+            if (!node || !node.offsetParent) return false;
+            const target = node.closest('.creator-tab') || node;
+            const rect = target.getBoundingClientRect();
+            target.dispatchEvent(new MouseEvent('mouseover', {{bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2}}));
+            target.dispatchEvent(new MouseEvent('mousedown', {{bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2}}));
+            target.dispatchEvent(new MouseEvent('mouseup', {{bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2}}));
+            target.click();
+            return true;
+        }};
+
+        for (const tab of document.querySelectorAll('.creator-tab')) {{
+            const t = (tab.textContent || '').replace(/\\s+/g,'').trim();
+            for (const label of labels) {{
+                if (t === label || t.includes(label)) {{
+                    clickNode(tab);
+                    const active = document.querySelector('.creator-tab.active');
+                    return 'OPEN_TAB:' + label + ':' + ((active && active.textContent) || '');
+                }}
+            }}
+        }}
+        for (const n of document.querySelectorAll('div,button,span,a')) {{
+            if (!n.offsetParent) continue;
+            const t = (n.textContent || '').replace(/\\s+/g,'').trim();
+            for (const label of labels) {{
+                if (t === label || t.includes(label)) {{
+                    clickNode(n);
+                    const active = document.querySelector('.creator-tab.active');
+                    return 'OPEN_FALLBACK:' + label + ':' + ((active && active.textContent) || '');
+                }}
+            }}
+        }}
+        return 'SKIP';
+    }})()
+    """
+    result = js_eval(ws, js)
+    print("Mode select:", result)
+    time.sleep(1.5)
+
+
+def upload_media(ws, media_path: str):
+    absolute_path = os.path.abspath(media_path)
+    if not os.path.isfile(absolute_path):
+        raise FileNotFoundError(f"media file not found: {absolute_path}")
+
+    media_kind = media_kind_for_path(absolute_path)
+    target_node = 0
+    for attempt in range(4):
+        if media_kind == "image":
+            select_publish_mode(ws, "image")
+        cdp_send(ws, "DOM.enable", {})
+        root = cdp_send(ws, "DOM.getDocument", {"depth": -1, "pierce": True})
+        root_id = root.get("root", {}).get("nodeId")
+        if not root_id:
+            raise RuntimeError("failed to access DOM root for XHS upload")
+
+        query = cdp_send(ws, "DOM.querySelectorAll", {"nodeId": root_id, "selector": 'input[type="file"]'})
+        node_ids = query.get("nodeIds", [])
+        if not node_ids:
+            time.sleep(1)
+            continue
+
+        for node_id in node_ids:
+            try:
+                attrs = cdp_send(ws, "DOM.getAttributes", {"nodeId": node_id}).get("attributes", [])
+            except Exception:
+                continue
+            attr_map = dict(zip(attrs[::2], attrs[1::2]))
+            accept = (attr_map.get("accept") or "").lower()
+            if media_kind == "image" and any(token in accept for token in ("image", ".png", ".jpg", ".jpeg", ".webp")):
+                target_node = node_id
+                break
+            if media_kind == "video" and any(token in accept for token in ("video", ".mp4", ".mov", ".m4v", ".webm")):
+                target_node = node_id
+                break
+        if target_node:
+            break
+        time.sleep(1)
+
+    if not target_node:
+        raise RuntimeError(f"no matching {media_kind} file input found on XHS publish page")
+
+    cdp_send(ws, "DOM.setFileInputFiles", {"nodeId": target_node, "files": [absolute_path]})
+    print(f"Upload started: {absolute_path}")
+
+    wait_seconds = 15 if media_kind_for_path(absolute_path) == "video" else 8
+    for attempt in range(wait_seconds):
+        state = js_eval(ws, CHECK_MEDIA_READY_JS)
+        print(f"  Media state {attempt+1}/{wait_seconds}: {state}")
+        if "MEDIA_READY" in str(state):
+            return
+        time.sleep(1)
+    stage = js_eval(ws, CHECK_UPLOAD_STAGE_JS)
+    raise RuntimeError(f"media upload did not become ready in time: {stage}")
 
 
 def type_into_focused(ws, text: str):
@@ -376,11 +526,12 @@ def fill_in_main(ws, title: str, body: str) -> bool:
 
 def main():
     if len(sys.argv) < 3:
-        print("Usage: cdp_xhs_publish.py <title> <body>", file=sys.stderr)
+        print("Usage: cdp_xhs_publish.py <title> <body> [media_path]", file=sys.stderr)
         sys.exit(1)
 
     title = sys.argv[1]
     body = sys.argv[2]
+    media_path = sys.argv[3] if len(sys.argv) > 3 else ""
     p = port()
     tab = find_xhs(p)
     if not tab:
@@ -392,7 +543,10 @@ def main():
     ws = connect_ws(tab["webSocketDebuggerUrl"], p)
     try:
         cdp_send(ws, "Page.enable", {})
-        prepare_page(ws)
+        preferred_kind = media_kind_for_path(media_path) if media_path else "image"
+        prepare_page(ws, preferred_kind)
+        if media_path:
+            upload_media(ws, media_path)
 
         ok = fill_in_main(ws, title, body)
         if not ok:

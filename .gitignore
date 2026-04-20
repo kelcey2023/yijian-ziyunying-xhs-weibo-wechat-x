@@ -13,3 +13,6 @@ SKILL.md.bak*
 
 # Local publishing metadata cache
 .clawhub/
+
+# Temporary auth artifacts
+jimeng_auth_qr.png

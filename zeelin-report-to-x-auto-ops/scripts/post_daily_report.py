@@ -1,11 +1,42 @@
 #!/usr/bin/env python3
-import requests, json, os, subprocess
+import json
+import os
+import random
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import requests
 
 REPORT_SITE = "https://thu-nmrc.github.io/THU-ZeeLin-Reports/"
 STATE_FILE = os.path.expanduser("~/.openclaw/memory/zeelin_last_report.json")
-TWEET_SCRIPT = os.path.expanduser("~/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts/tweet.sh")
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
+TWEET_SCRIPT = REPO_ROOT / "zeelin-twitter-x-auto-ops" / "scripts" / "tweet.sh"
 
 os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+
+
+def maybe_randomized_delay():
+    if os.getenv("AUTO_OPS_DELAY_ENABLED", "1") != "1":
+        return
+
+    try:
+        min_seconds = int(os.getenv("AUTO_OPS_DELAY_MIN_SECONDS", "600"))
+        max_seconds = int(os.getenv("AUTO_OPS_DELAY_MAX_SECONDS", "2400"))
+    except ValueError:
+        print("Skip randomized delay: invalid AUTO_OPS_DELAY_* configuration")
+        return
+
+    if max_seconds < min_seconds:
+        wait_seconds = min_seconds
+    else:
+        wait_seconds = random.randint(min_seconds, max_seconds)
+
+    print(f"Randomized publish delay: {wait_seconds}s")
+    time.sleep(wait_seconds)
 
 # Load state
 posted = set()
@@ -15,8 +46,6 @@ if os.path.exists(STATE_FILE):
 
 html = requests.get(REPORT_SITE, timeout=20).text
 
-# crude extraction of report titles
-import re
 titles = re.findall(r'heading "([^"]+)"', html)
 
 if not titles:
@@ -50,10 +79,19 @@ if not summary:
 
 tweet = f"New AI research report released.\n\n{latest}\n\n{summary}\n\nReport:\n{REPORT_SITE}\n\n#AI #TechTwitter"
 
-subprocess.run(["bash", TWEET_SCRIPT, tweet, "https://x.com"], check=False)
+maybe_randomized_delay()
+
+if not TWEET_SCRIPT.exists():
+    print(f"Tweet script not found: {TWEET_SCRIPT}", file=sys.stderr)
+    sys.exit(1)
+
+result = subprocess.run(["bash", str(TWEET_SCRIPT), tweet, "https://x.com"], check=False)
+if result.returncode != 0:
+    print(f"Tweet publish failed with exit code {result.returncode}", file=sys.stderr)
+    sys.exit(result.returncode)
 
 posted.add(latest)
 with open(STATE_FILE, "w") as f:
-    json.dump({"posted": list(posted)}, f)
+    json.dump({"posted": sorted(posted)}, f)
 
 print("Posted report:", latest)

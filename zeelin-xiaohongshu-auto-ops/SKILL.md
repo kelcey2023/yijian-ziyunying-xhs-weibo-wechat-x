@@ -1,24 +1,30 @@
 ---
-name: ZeeLin 小红书自动发布
+name: ZeeLin 小红书自动运营
 description: >
-  ZeeLin小红书自动化内容运营技能：从热文抓取→热梗生成→产品结合→发布文案的全流程自动化内容生产。
+  ZeeLin小红书自动化内容运营技能：从热文抓取→热梗生成→产品结合→发布执行的全流程自动化内容生产。
   适用场景包括但不限于：短视频选题策划、爆款文案生成、钩子开头撰写、
   账号人设定位、自媒体内容日历规划。当用户提到"内容运营"、"选题"、"爆款"、"钩子"、
   "文案"、"短视频策划"、"自媒体运营"、"账号定位"、"热点追踪"、"内容日历"、
   "文旅内容"、"产品种草"等关键词时，请使用此技能。即使用户只是问"帮我写个短视频文案"
   或"最近有什么热点可以追"，也应触发此技能。
 user-invocable: true
-metadata: {"openclaw":{"emoji":"📕","skillKey":"zeelin-xiaohongshu-autopost"}}
+metadata: {"openclaw":{"emoji":"📕","skillKey":"zeelin-xiaohongshu-auto-ops"}}
 ---
 
-# 自动化网络内容运营 (Auto Content Ops)
+# 小红书自动运营 (Auto Content Ops)
 
 ## 技能概述
 
-本技能将薛辉自媒体方法论体系化为一套可执行的自动化内容生产流水线。
-核心流程：**抓热文 → 生热梗 → 结合产品 → 输出发布文案**。
+本技能将内容运营方法论体系化为一套可执行的自动化内容生产流水线。
+核心流程：**抓热文 → 生热梗 → 结合产品 → 输出内容 → 执行发布**。
+
+这个 skill 的核心目标不是“发一篇就结束”，而是让账号围绕主题持续运转。
 
 在执行任何步骤前，先阅读 `references/methodology.md` 获取完整方法论知识库。
+
+补充说明：
+- 总控引擎现在可以先调用即梦 `dreamina` 生成共享素材，并把图片路径传入小红书发布链路
+- 当有即梦图片或视频素材时，总控会切到 CDP 图文/视频笔记发布器；没有素材时，仍然使用现有“写长文”流程
 
 ---
 
@@ -95,7 +101,7 @@ metadata: {"openclaw":{"emoji":"📕","skillKey":"zeelin-xiaohongshu-autopost"}}
 
 ---
 
-### Phase 4：文案输出（自动发布）
+### Phase 4：文案输出（运营执行）
 
 生成完整的发布文案包，包含以下组件：
 
@@ -247,7 +253,7 @@ metadata: {"openclaw":{"emoji":"📕","skillKey":"zeelin-xiaohongshu-autopost"}}
 
 ## 六、网页发布SOP（2026-03 同步）
 
-当执行自动发布时，网页流程以脚本为准，固定步骤如下：
+当执行运营发布动作时，网页流程以脚本为准，固定步骤如下：
 
 1. 进入创作首页后点击「发布笔记」。
 2. 在弹层点击「写长文」。
@@ -263,3 +269,19 @@ metadata: {"openclaw":{"emoji":"📕","skillKey":"zeelin-xiaohongshu-autopost"}}
 - `scripts/post_xiaohongshu.sh`：仅执行发布流程（接收标题与正文）。
 
 发布成功判定关键字：`发布成功`、`审核中`、`已发布`、`内容已提交`。
+
+## 七、定时与随机间隔建议
+
+如果你把它接进定时任务，不建议每次都整点触发。
+
+推荐环境变量：
+
+```bash
+AUTO_OPS_DELAY_ENABLED=1
+AUTO_OPS_DELAY_MIN_SECONDS=900
+AUTO_OPS_DELAY_MAX_SECONDS=3600
+```
+
+这样每次真正执行发布时，都会在 15 到 60 分钟之间随机偏移，更接近真实运营节奏。
+
+如果要按一个主题持续跑多模块运营，也可以由仓库级 `scripts/run_autoops_engine.sh` 统一调用本脚本。

@@ -9,6 +9,7 @@
 set -euo pipefail
 
 TWEET_TEXT="${1:-}"
+MEDIA_PATH="${3:-}"
 
 # Enforce safe Twitter length while preserving URLs (X safe margin)
 MAX_LEN=240
@@ -46,11 +47,20 @@ echo "Browser reachable on CDP port ${CDP_PORT}."
 
 # Primary method: direct CDP (bypasses openclaw CLI gateway round-trip)
 echo "Posting via direct CDP..."
-if python3 "$SCRIPT_DIR/cdp_tweet.py" "$TWEET_TEXT" --port "$CDP_PORT" --base-url "$BASE_URL"; then
+CDP_ARGS=("$TWEET_TEXT" --port "$CDP_PORT" --base-url "$BASE_URL")
+if [ -n "$MEDIA_PATH" ] && [ -f "$MEDIA_PATH" ]; then
+  echo "Will attach media: $MEDIA_PATH"
+  CDP_ARGS+=(--image "$MEDIA_PATH")
+fi
+
+if python3 "$SCRIPT_DIR/cdp_tweet.py" "${CDP_ARGS[@]}"; then
   exit 0
 fi
 
 echo "CDP direct method failed, falling back to CLI method..."
+if [ -n "$MEDIA_PATH" ]; then
+  echo "Warning: CLI fallback does not support media upload. Posting text only."
+fi
 
 # Fallback: openclaw browser CLI
 CLI="${OPENCLAW_CLI:-openclaw browser}"

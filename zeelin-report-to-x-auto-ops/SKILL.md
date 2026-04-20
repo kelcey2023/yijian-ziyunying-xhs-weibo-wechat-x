@@ -1,14 +1,14 @@
 ---
-name: ZeeLin Report-to-X AutoPost
+name: ZeeLin Report-to-X Distribution Ops
 description: >
-  Automatically picks the latest unposted report from a report website or JSON feed, drafts an English X/Twitter post summarizing the report, publishes it via the logged-in X web session, records posted ids to avoid duplicates, and can be scheduled with OpenClaw cron. Use when the user wants daily report-to-X posting, website report promotion, non-repeating social posting from a report list, or automated sharing of research/report updates to X.
+  Automatically picks the latest unposted report from a report website or JSON feed, drafts an English X/Twitter post summarizing the report, publishes it via the logged-in X web session, records posted ids to avoid duplicates, and can be scheduled with OpenClaw cron. This is a distribution-ops skill for keeping an account continuously active around report content, not just a one-off publishing tool.
 user-invocable: true
-metadata: {"openclaw":{"emoji":"📰","skillKey":"zeelin-report-to-x-autopost"}}
+metadata: {"openclaw":{"emoji":"📰","skillKey":"zeelin-report-to-x-auto-ops"}}
 ---
 
-# ZeeLin Report-to-X AutoPost 📰
+# ZeeLin Report-to-X Distribution Ops 📰
 
-把“报告网站/报告 JSON 列表 → 选最新未发报告 → 生成英文推文 → 发布到 X → 记录已发状态避免重复”封成一个可复用工作流。
+把“报告网站/报告 JSON 列表 → 选最新未发报告 → 生成英文推文 → 发布到 X → 记录已发状态避免重复”封成一个可复用分发运营工作流。
 
 适合场景：
 - 每天自动发一篇报告到 X
@@ -90,6 +90,7 @@ bash /path/to/tweet.sh "tweet text" https://x.com
 用户要求“每天一条、不重复”时：
 - 创建本地脚本处理“读取报告列表 + 去重 + 生成推文 + 发布 + 更新状态”
 - 再用 `cron` 建每日任务
+- 建议增加随机延迟，避免每次都固定在同一分钟发出
 
 推荐时间：
 - `Asia/Shanghai` 每天上午 10:00
@@ -138,3 +139,4 @@ TL;DR：
 - 通过网页端 X 发出
 - 记录状态避免重复
 - 日更用 cron 挂起来
+- 如果你需要统一主题下的持续运营编排，可交给仓库级 `scripts/run_autoops_engine.sh`

@@ -1,13 +1,15 @@
 ---
-name: ZeeLin Twitter/X AutoPost
-description: "ZeeLin Twitter/X 自动发推 + 回关 + 涨粉运营 — 通过 openclaw browser / Browser Relay 操作网页版 Twitter/X，无需 API Key。用户先在自己的浏览器登录并挂上 Relay，Agent 负责撰写推文并发布、一键回关粉丝、蓝V互关（认证关注者回关）、深度评论、以及在求关注/互关类帖子下主动打招呼互动。支持定时发推（openclaw cron）。Keywords: Zeelin, ZeeLin, auto tweet, follow back, 回关, 互关, 蓝V互关, 认证关注者, 涨粉, 打招呼, comment, scheduled post, no API key."
+name: ZeeLin Twitter/X Auto Ops
+description: "ZeeLin Twitter/X 自动运营技能 — 通过 openclaw browser / Browser Relay 操作网页版 Twitter/X，无需 API Key。用户先在自己的浏览器登录并挂上 Relay，Agent 负责围绕主题自动写内容并发布、回关粉丝、蓝V互关（认证关注者回关）、深度评论、以及在求关注/互关类帖子下主动互动，适合把账号日常运营持续跑起来。支持定时任务与随机延迟，减少固定整点触发痕迹。Keywords: Zeelin, ZeeLin, auto ops, auto tweet, follow back, 回关, 互关, 蓝V互关, 认证关注者, 涨粉, 打招呼, comment, scheduled post, random delay, no API key."
 user-invocable: true
-metadata: {"openclaw":{"emoji":"🐦","skillKey":"zeelin-twitter-x-autopost"}}
+metadata: {"openclaw":{"emoji":"🐦","skillKey":"zeelin-twitter-x-auto-ops"}}
 ---
 
-# ZeeLin Twitter/X 自动发推 + 回关 + 涨粉运营 🐦
+# ZeeLin Twitter/X 自动运营 🐦
 
-通过 `openclaw browser` / Browser Relay 操作网页版 Twitter/X：支持**发推**（撰写 + 发布）、**回关**（粉丝列表一键回关）、**蓝V互关**（认证关注者回关）、**深度评论**、以及**在求关注/互关类帖子下主动打招呼**。用户先在自己的浏览器登录并挂上 Relay，Agent 用脚本完成操作，无需 API Key。
+通过 `openclaw browser` / Browser Relay 操作网页版 Twitter/X：支持**内容生成并发布**、**回关**（粉丝列表一键回关）、**蓝V互关**（认证关注者回关）、**深度评论**、以及**在求关注/互关类帖子下主动打招呼**。用户先在自己的浏览器登录并挂上 Relay，Agent 用脚本持续执行账号运营动作，无需 API Key。
+
+这个 skill 的重点不是“只发一条”，而是让账号运营流程自己跑起来。
 
 **飞书下**：发推/评论时优先直接发一个 `exec`；回关/蓝V互关默认带较长超时，减少 request timed out。
 
@@ -49,7 +51,7 @@ metadata: {"openclaw":{"emoji":"🐦","skillKey":"zeelin-twitter-x-autopost"}}
 ### 普通回关
 
 ```json
-{"tool": "exec", "args": {"command": "bash /Users/youke/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts/follow_back.sh Gsdata5566 https://x.com 5", "timeout": 90000}}
+{"tool": "exec", "args": {"command": "bash ./zeelin-twitter-x-auto-ops/scripts/follow_back.sh Gsdata5566 https://x.com 5", "timeout": 90000}}
 ```
 
 ### 蓝V互关 / 认证关注者回关
@@ -57,9 +59,10 @@ metadata: {"openclaw":{"emoji":"🐦","skillKey":"zeelin-twitter-x-autopost"}}
 优先调用已合并进本 skill 的运营脚本：
 
 ```json
-{"tool": "exec", "args": {"command": "bash /Users/youke/.openclaw/workspace/skills/twitter-x-operations/scripts/follow_back_verified.sh Gsdata5566 https://x.com 5", "timeout": 90000}}
+{"tool": "exec", "args": {"command": "bash ./zeelin-twitter-x-auto-ops/scripts/follow_back.sh Gsdata5566 https://x.com 5", "timeout": 90000}}
 ```
 
+- 当前仓库未附带单独的 `follow_back_verified.sh`，如需蓝V专用流程，需先补脚本再调用
 - 飞书下默认建议 **5 人**，更稳
 - 执行完后根据输出回报：「已回关 X 人」/「已蓝V互关 X 人」
 
@@ -94,7 +97,13 @@ metadata: {"openclaw":{"emoji":"🐦","skillKey":"zeelin-twitter-x-autopost"}}
 优先使用现成脚本：
 
 ```bash
-bash /Users/youke/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts/tweet.sh "推文内容" https://x.com
+bash ./zeelin-twitter-x-auto-ops/scripts/tweet.sh "推文内容" https://x.com
+```
+
+如需附带即梦生成的图片：
+
+```bash
+bash ./zeelin-twitter-x-auto-ops/scripts/tweet.sh "推文内容" https://x.com /absolute/path/to/jimeng-image.png
 ```
 
 或在需要时用浏览器流程补救。
@@ -115,7 +124,7 @@ bash /Users/youke/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts
 3. 确认后执行：
 
 ```json
-{"tool": "exec", "args": {"command": "bash /Users/youke/.openclaw/workspace/skills/twitter-x-operations/scripts/comment.sh \"评论内容\" \"帖子URL\" https://x.com", "timeout": 60000}}
+{"tool": "exec", "args": {"command": "bash ./zeelin-twitter-x-auto-ops/scripts/comment.sh \"评论内容\" \"帖子URL\" https://x.com", "timeout": 60000}}
 ```
 
 ---
@@ -135,7 +144,7 @@ bash /Users/youke/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts
 4. 逐条执行评论脚本：
 
 ```json
-{"tool": "exec", "args": {"command": "bash /Users/youke/.openclaw/workspace/skills/twitter-x-operations/scripts/comment.sh \"评论内容\" \"https://x.com/xxx/status/123\" https://x.com", "timeout": 60000}}
+{"tool": "exec", "args": {"command": "bash ./zeelin-twitter-x-auto-ops/scripts/comment.sh \"评论内容\" \"https://x.com/xxx/status/123\" https://x.com", "timeout": 60000}}
 ```
 
 5. 最后汇总告诉用户已互动多少条
@@ -147,6 +156,21 @@ bash /Users/youke/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts
 ## 定时发布
 
 当用户要求定时发推时，使用 `openclaw cron`。
+
+### 随机间隔建议
+
+为了避免每次都在整点或固定分钟触发，定时任务建议配合随机延迟环境变量：
+
+```bash
+AUTO_OPS_DELAY_ENABLED=1
+AUTO_OPS_DELAY_MIN_SECONDS=600
+AUTO_OPS_DELAY_MAX_SECONDS=2400
+```
+
+含义：
+- 最少延迟 10 分钟
+- 最多延迟 40 分钟
+- 同一个整点任务每次实际发出时间不同，更像人工运营节奏
 
 ### 询问参数
 
@@ -164,7 +188,7 @@ openclaw cron add \
   --description "每天自动撰写并发布推文" \
   --cron "0 10 * * *" \
   --tz "Asia/Shanghai" \
-  --message "请执行 zeelin-twitter-web-autopost skill：用用户的X网址打开推特，撰写一条英文AI热点推文并发布，不要与之前重复"
+  --message "请执行 zeelin-twitter-x-auto-ops skill：用用户的X网址打开推特，围绕主题自动运营账号，生成并发布一条英文AI热点推文，不要与之前重复"
 ```
 
 ---
@@ -173,10 +197,11 @@ openclaw cron add \
 
 | 操作 | 命令 |
 |------|------|
-| 发推 | `bash /Users/youke/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts/tweet.sh "推文内容" https://x.com` |
-| 回关 | `bash /Users/youke/.openclaw/workspace/skills/zeelin-twitter-web-autopost/scripts/follow_back.sh Gsdata5566 https://x.com 5` |
-| 蓝V互关 | `bash /Users/youke/.openclaw/workspace/skills/twitter-x-operations/scripts/follow_back_verified.sh Gsdata5566 https://x.com 5` |
-| 评论 | `bash /Users/youke/.openclaw/workspace/skills/twitter-x-operations/scripts/comment.sh "评论内容" "帖子URL" https://x.com` |
+| 发推 | `bash ./zeelin-twitter-x-auto-ops/scripts/tweet.sh "推文内容" https://x.com` |
+| 发推带图 | `bash ./zeelin-twitter-x-auto-ops/scripts/tweet.sh "推文内容" https://x.com /absolute/path/to/jimeng-image.png` |
+| 回关 | `bash ./zeelin-twitter-x-auto-ops/scripts/follow_back.sh Gsdata5566 https://x.com 5` |
+| 蓝V互关 | 当前仓库未附带专用脚本，需补齐后再自动化 |
+| 评论 | `bash ./zeelin-twitter-x-auto-ops/scripts/comment.sh "评论内容" "帖子URL" https://x.com` |
 
 以上均通过 `exec` 执行；回关/蓝V互关建议 `timeout: 90000`，评论建议 `timeout: 60000`。
 
@@ -197,6 +222,7 @@ openclaw cron add \
 
 - 用户说「发推」→ 发推脚本
 - 用户说「回关」→ `follow_back.sh`
-- 用户说「蓝V互关」→ `follow_back_verified.sh`
+- 用户说「蓝V互关」→ 当前仓库需先补专用脚本
 - 用户说「评论这条」→ `comment.sh`
 - 用户说「找涨粉帖互动」→ 搜 3～5 条 + 逐条 `comment.sh`
+- 用户说「围绕一个主题持续跑账号」→ 可由仓库级 `scripts/run_autoops_engine.sh` 统一编排

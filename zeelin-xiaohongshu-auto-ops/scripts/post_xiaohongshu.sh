@@ -1,10 +1,12 @@
 #!/bin/bash
 set -u -o pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TITLE="${1:-}"
 CONTENT="${2:-}"
-IMAGE_PATH="${3:-/Users/youke/.openclaw/workspace/skills/zeelin-xiaohongshu-autopost/assets/default_cover.jpg}"
-CLI="${OPENCLAW_CLI:-agent-browser}"
+IMAGE_PATH="${3:-$ROOT_DIR/assets/default_cover.jpg}"
+CLI="${OPENCLAW_CLI:-openclaw browser}"
 BASE_URL="https://creator.xiaohongshu.com/new/home"
 
 if [ -z "$TITLE" ] || [ -z "$CONTENT" ]; then

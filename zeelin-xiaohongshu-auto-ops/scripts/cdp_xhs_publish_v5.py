@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import sys,json,time,requests,websocket
 
-TITLE=sys.argv[1][:64] if len(sys.argv)>1 else "AI自动发布测试"
-BODY=sys.argv[2] if len(sys.argv)>2 else "这是ZeeLin小红书自动发布流程测试。"
+TITLE=sys.argv[1][:64] if len(sys.argv)>1 else "AI自动运营测试"
+BODY=sys.argv[2] if len(sys.argv)>2 else "这是ZeeLin小红书自动运营流程测试。"
 
 CDP="http://127.0.0.1:9222/json"
 
