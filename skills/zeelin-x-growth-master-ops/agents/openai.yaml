@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZeeLin X Growth Master Ops"
+  short_description: "Run safe, evidence-first X growth operations"
+  default_prompt: "Use $zeelin-x-growth-master-ops to run one gated X growth cycle and report verified actions or the exact hold reason."
